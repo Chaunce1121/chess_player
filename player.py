@@ -18,7 +18,6 @@ PIECE_VALUE = {
 
 # Calculate how much points each side has based on PIECE_VALUE
 def material_score(board: chess.Board, pov: bool) -> int:
-    """Material from pov's perspective."""
     score = 0
     for ptype, val in PIECE_VALUE.items():
         score += val * len(board.pieces(ptype, pov))
@@ -62,7 +61,7 @@ class TransformerPlayer(Player):
         candidates: List[chess.Move] = []
         for _ in range(self.num_tries):
             with torch.no_grad():
-                out = self.model.generate(
+                out = self.model.generate( # generate natural language text that contains chess move
                     **inputs,
                     max_new_tokens=12,
                     do_sample=True,
@@ -70,9 +69,10 @@ class TransformerPlayer(Player):
                     temperature=0.9,
                     pad_token_id=self.tokenizer.eos_token_id,
                 )
-            txt = self.tokenizer.decode(out[0], skip_special_tokens=True)
+            txt = self.tokenizer.decode(out[0], skip_special_tokens=True) # Decode back into readable text
 
-            for uci in self._extract(txt):
+            for uci in self._extract(txt): # Searches generated text for UCI move patterns
+                # Convert the text to move object
                 try:
                     mv = chess.Move.from_uci(uci)
                     if mv in board.legal_moves:
@@ -80,11 +80,10 @@ class TransformerPlayer(Player):
                 except ValueError:
                     pass
 
-        # If model gave nothing, add a few random legal options
+        # If model gave nothing, add a few random legal options, prevents returning nothing
         if not candidates:
             candidates = random.sample(legal_moves, k=min(10, len(legal_moves)))
 
-        # Prefer immediate checkmate if available
         best_move = None
         best_score = -10**9
 
@@ -96,6 +95,7 @@ class TransformerPlayer(Player):
                 seen.add(m)
                 uniq.append(m)
 
+        # Check what the candidate move is on board-copy
         for mv in uniq:
             b2 = board.copy()
             b2.push(mv)
