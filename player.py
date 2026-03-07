@@ -16,6 +16,7 @@ PIECE_VALUE = {
     chess.KING: 0,
 }
 
+# Calculate how much points each side has based on PIECE_VALUE
 def material_score(board: chess.Board, pov: bool) -> int:
     """Material from pov's perspective."""
     score = 0
@@ -24,6 +25,7 @@ def material_score(board: chess.Board, pov: bool) -> int:
         score -= val * len(board.pieces(ptype, not pov))
     return score
 
+# Create Player Class
 class TransformerPlayer(Player):
     def __init__(self, name: str, hf_model_id: str = "Chaunce1121/chess-fen-move-model", num_tries: int = 8):
         super().__init__(name)
@@ -36,21 +38,23 @@ class TransformerPlayer(Player):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
+
     def _prompt(self, fen: str) -> str:
         return f"FEN: {fen}\nMOVE:"
 
+    # Extract the chess move from generated text
     def _extract(self, txt: str) -> List[str]:
         tail = txt.split("MOVE:", 1)[-1].lower()
         # matches e2e4 or e7e8q etc.
         return re.findall(r"\b[a-h][1-8][a-h][1-8][qrbn]?\b", tail)
 
     def get_move(self, fen: str) -> Optional[str]:
-        board = chess.Board(fen)
+        board = chess.Board(fen) # Create Chess board
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             return None
 
-        pov = board.turn  # side we are playing
+        pov = board.turn  # side of player
         prompt = self._prompt(fen)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
