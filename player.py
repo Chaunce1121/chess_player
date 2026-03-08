@@ -17,6 +17,7 @@ PIECE_VALUE = {
     chess.KING: 0,
 }
 
+# Important center squares that are generally strong to control
 CENTER_SQUARES = {chess.D4, chess.E4, chess.D5, chess.E5}
 EXTENDED_CENTER = {
     chess.C3, chess.D3, chess.E3, chess.F3,
@@ -399,5 +400,6 @@ class TransformerPlayer(Player):
 
         if best_move:
             return best_move.uci()
+
 
         return random.choice(legal_moves).uci()
