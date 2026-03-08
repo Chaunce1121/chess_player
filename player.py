@@ -16,15 +16,14 @@ PIECE_VALUE = {
     chess.KING: 0,
 }
 
-# Calculate how much points each side has based on PIECE_VALUE
 def material_score(board: chess.Board, pov: bool) -> int:
+    """Material from pov's perspective."""
     score = 0
     for ptype, val in PIECE_VALUE.items():
         score += val * len(board.pieces(ptype, pov))
         score -= val * len(board.pieces(ptype, not pov))
     return score
 
-# Create Player Class
 class TransformerPlayer(Player):
     def __init__(self, name: str, hf_model_id: str = "Chaunce1121/chess-fen-move-model", num_tries: int = 8):
         super().__init__(name)
@@ -37,23 +36,33 @@ class TransformerPlayer(Player):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-
     def _prompt(self, fen: str) -> str:
         return f"FEN: {fen}\nMOVE:"
 
-    # Extract the chess move from generated text
     def _extract(self, txt: str) -> List[str]:
         tail = txt.split("MOVE:", 1)[-1].lower()
         # matches e2e4 or e7e8q etc.
         return re.findall(r"\b[a-h][1-8][a-h][1-8][qrbn]?\b", tail)
 
     def get_move(self, fen: str) -> Optional[str]:
-        board = chess.Board(fen) # Create Chess board
+        board = chess.Board(fen)
+        # Simple opening rule (first move)
+        if board.fullmove_number == 1:
+            if board.turn == chess.WHITE:
+                for move in ["e2e4", "d2d4"]:
+                    mv = chess.Move.from_uci(move)
+                    if mv in board.legal_moves:
+                        return mv.uci()
+            else:
+                for move in ["e7e5", "d7d5"]:
+                    mv = chess.Move.from_uci(move)
+                    if mv in board.legal_moves:
+                        return mv.uci()
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             return None
 
-        pov = board.turn  # side of player
+        pov = board.turn  # side we are playing
         prompt = self._prompt(fen)
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
 
@@ -61,7 +70,7 @@ class TransformerPlayer(Player):
         candidates: List[chess.Move] = []
         for _ in range(self.num_tries):
             with torch.no_grad():
-                out = self.model.generate( # generate natural language text that contains chess move
+                out = self.model.generate(
                     **inputs,
                     max_new_tokens=12,
                     do_sample=True,
@@ -69,10 +78,9 @@ class TransformerPlayer(Player):
                     temperature=0.9,
                     pad_token_id=self.tokenizer.eos_token_id,
                 )
-            txt = self.tokenizer.decode(out[0], skip_special_tokens=True) # Decode back into readable text
+            txt = self.tokenizer.decode(out[0], skip_special_tokens=True)
 
-            for uci in self._extract(txt): # Searches generated text for UCI move patterns
-                # Convert the text to move object
+            for uci in self._extract(txt):
                 try:
                     mv = chess.Move.from_uci(uci)
                     if mv in board.legal_moves:
@@ -80,10 +88,11 @@ class TransformerPlayer(Player):
                 except ValueError:
                     pass
 
-        # If model gave nothing, add a few random legal options, prevents returning nothing
+        # If model gave nothing, add a few random legal options
         if not candidates:
             candidates = random.sample(legal_moves, k=min(10, len(legal_moves)))
 
+        # Prefer immediate checkmate if available
         best_move = None
         best_score = -10**9
 
@@ -95,7 +104,6 @@ class TransformerPlayer(Player):
                 seen.add(m)
                 uniq.append(m)
 
-        # Check what the candidate move is on board-copy
         for mv in uniq:
             b2 = board.copy()
             b2.push(mv)
@@ -109,6 +117,9 @@ class TransformerPlayer(Player):
                 score += 1
             if board.gives_check(mv):
                 score += 1
+           # Penalize moves where the piece can immediately be captured
+            if b2.is_attacked_by(not pov, mv.to_square):
+                score -= 2
 
             if score > best_score:
                 best_score = score
